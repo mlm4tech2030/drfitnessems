@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>صالة العاب دكتور فيتنس سنتر EMS</title>
+  <style>
+    body {
+      background-color: #111;
+      color: #f00;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 20px;
+      direction: rtl;
+    }
+    input, select, button {
+      display: block;
+      margin: 10px auto;
+      padding: 10px;
+      width: 80%;
+      max-width: 300px;
+      font-size: 16px;
+    }
+    button {
+      background-color: #f00;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #c00;
+    }
+    .hidden { display: none; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #f00;
+      padding: 8px;
+      text-align: center;
+      cursor: pointer;
+    }
+    th {
+      background-color: #222;
+    }
+    .booked {
+      background-color: #600;
+      color: #fff;
+      cursor: not-allowed;
+    }
+    .disabled-slot {
+      background-color: yellow;
+      color: black;
+      cursor: not-allowed;
+    }
+    .action-btn {
+      background: #c00;
+      color: #fff;
+      margin: 2px;
+      padding: 5px;
+      font-size: 12px;
+    }
+    #notice {
+      background-color: #222;
+      color: yellow;
+      padding: 10px;
+      margin-bottom: 20px;
+      font-size: 16px;
+      border: 1px solid yellow;
+    }
+  </style>
+</head>
+<body>
+
+<div id="login">
+  <h1>تسجيل الدخول إلى صالة العاب دكتور فيتنس سنتر EMS</h1>
+  <input type="text" id="username" placeholder="اسم المستخدم">
+  <input type="password" id="password" placeholder="كلمة المرور">
+  <button onclick="login()">دخول</button>
+</div>
+
+<div id="admin" class="hidden">
+  <h1>لوحة الأدمن</h1>
+  <h2>طلبات التسجيل:</h2>
+  <div id="pending"></div>
+  <h2>قائمة المتدربين:</h2>
+  <div id="approved"></div>
+  <h2>جدول الجلسات:</h2>
+  <div id="reports"></div>
+  <h2>التقارير الشهرية:</h2>
+  <div id="monthly"></div>
+  <button onclick="clearBookings()">مسح كل الحجوزات</button>
+  <button onclick="logout()">خروج</button>
+</div>
+
+<div id="user" class="hidden">
+  <h1>لوحة المتدرب</h1>
+  <div id="notice">
+    مرحبًا بكم! نود التنويه أن الحجز غير قابل للإلغاء بعد تأكيده، ويمكن حجز الجلسات حتى قبل الموعد بساعة. الاشتراك صالح لشهر واحد فقط، ولا تُرحّل الجلسات للشهر التالي.01158004076
+  </div>
+  <h2>الجدول الأسبوعي</h2>
+  <div id="schedule"></div>
+  <h2>جلساتي المحجوزة:</h2>
+  <div id="myBookings"></div>
+  <button onclick="logout()">خروج</button>
+</div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-database-compat.js"></script>
+<script>
+  // Firebase configuration
+  const firebaseConfig = {
+    apiKey: "AIzaSyAG-GYeKi412tDCH_u4SdEFSNotioOk22A",
+    authDomain: "ems-booking-final.firebaseapp.com",
+    projectId: "ems-booking-final",
+    storageBucket: "ems-booking-final.appspot.com",
+    messagingSenderId: "861804350759",
+    appId: "1:861804350759:web:e883b2ed0a2fefca9f6d02",
+    measurementId: "G-NDHTER3QJF"
+  };
+
+  // Initialize Firebase
+  const app = firebase.initializeApp(firebaseConfig);
+  const database = firebase.database();
+
+  const adminUsername = "admin";
+  const adminPassword = "admin123";
+
+  let currentUser = null;
+  let users = {};
+  let bookings = {};
+  let disabledSlots = [];
+
+  const days = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+  const hours = [];
+  let hour = 10, minute = 0;
+  while ((hour < 23) || (hour === 23 && minute <= 20)) {
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const h = hour % 12 === 0 ? 12 : hour % 12;
+    const m = minute === 0 ? "00" : minute;
+    hours.push(`${h}:${m} ${ampm}`);
+    minute += 40;
+    if (minute >= 60) {
+      minute -= 60;
+      hour += 1;
+    }
+  }
+
+  // Load data from Firebase
+  function loadData() {
+    database.ref('users').on('value', (snapshot) => {
+      users = snapshot.val() || {};
+      if (currentUser?.role === 'admin') renderAdmin();
+      else if (currentUser?.role === 'user') renderUser();
+    });
+
+    database.ref('bookings').on('value', (snapshot) => {
+      bookings = snapshot.val() || {};
+      if (currentUser?.role === 'admin') renderAdmin();
+      else if (currentUser?.role === 'user') renderUser();
+    });
+
+    database.ref('disabledSlots').on('value', (snapshot) => {
+      disabledSlots = snapshot.val() || [];
+      if (currentUser?.role === 'admin') renderAdmin();
+      else if (currentUser?.role === 'user') renderUser();
+    });
+  }
+
+  function login() {
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value.trim();
+
+    if (username === adminUsername && password === adminPassword) {
+      currentUser = {role: 'admin'};
+      document.getElementById('login').classList.add('hidden');
+      document.getElementById('admin').classList.remove('hidden');
+      loadData();
+      return;
+    }
+
+    database.ref('users/' + username).once('value').then((snapshot) => {
+      const userData = snapshot.val();
+
+      if (!userData) {
+        // New user registration
+        const newUser = {
+          password: password,
+          approved: false,
+          type: null,
+          sessions: 0
+        };
+        database.ref('users/' + username).set(newUser)
+          .then(() => {
+            alert('تم إنشاء حسابك بنجاح، بانتظار موافقة الأدمن.');
+          });
+      } else if (userData.password === password) {
+        if (!userData.approved) {
+          alert('حسابك بانتظار موافقة الأدمن.');
+        } else {
+          currentUser = {role: 'user', name: username};
+          document.getElementById('login').classList.add('hidden');
+          document.getElementById('user').classList.remove('hidden');
+          loadData();
+        }
+      } else {
+        alert('كلمة المرور غير صحيحة.');
+      }
+    });
+  }
+
+  function logout() {
+    currentUser = null;
+    document.getElementById('login').classList.remove('hidden');
+    document.getElementById('admin').classList.add('hidden');
+    document.getElementById('user').classList.add('hidden');
+  }
+
+  function renderAdmin() {
+    const pending = Object.keys(users).filter(u => !users[u].approved);
+    document.getElementById('pending').innerHTML = pending.length ?
+      pending.map(u => `<div>${u} <select id="type-${u}"><option value="single">سنجل</option><option value="double">دوبل</option></select><button onclick="approve('${u}')">اعتماد</button></div>`).join('') : "لا توجد طلبات.";
+
+    const approved = Object.keys(users).filter(u => users[u].approved);
+    document.getElementById('approved').innerHTML = approved.length ?
+      approved.map(u => `<div>${u} - اشتراك: ${users[u].type}<button class="action-btn" onclick="changeType('${u}')">تغيير الاشتراك</button><button class="action-btn" onclick="deleteUser('${u}')">حذف المتدرب</button></div>`).join('') : "لا يوجد.";
+
+    renderReportTable('reports', bookings, false, true);
+    renderMonthlyReport();
+  }
+
+  function approve(username) {
+    const type = document.getElementById(`type-${username}`).value;
+    database.ref('users/' + username).update({
+      approved: true,
+      type: type
+    });
+  }
+
+  function changeType(username) {
+    const newType = users[username].type === 'single' ? 'double' : 'single';
+    database.ref('users/' + username).update({
+      type: newType
+    });
+  }
+
+  function deleteUser(username) {
+    if (confirm('هل أنت متأكد من حذف هذا المستخدم؟')) {
+      // Delete user
+      database.ref('users/' + username).remove();
+      
+      // Delete user's bookings
+      const updates = {};
+      Object.keys(bookings).forEach(time => {
+        if (bookings[time] === username) {
+          updates['bookings/' + time] = null;
+        }
+      });
+      database.ref().update(updates);
+    }
+  }
+
+  function clearBookings() {
+    if (confirm('سيتم مسح كل الحجوزات، هل أنت متأكد؟')) {
+      database.ref('bookings').set({});
+    }
+  }
+
+  function renderReportTable(containerId, data, allowBooking = false, allowToggle = false) {
+    let html = `<table><tr><th>اليوم/الوقت</th>`;
+    hours.forEach(h => html += `<th>${h}</th>`);
+    html += `</tr>`;
+
+    days.forEach(day => {
+      html += `<tr><th>${day}</th>`;
+      hours.forEach(hour => {
+        const time = `${day}-${hour}`;
+        const bookedBy = data[time];
+        const isDisabled = disabledSlots.includes(time);
+
+        let content = 'فارغ';
+        let className = '';
+        let onClick = '';
+
+        if (bookedBy) {
+          content = bookedBy;
+          className = 'booked';
+        } else if (isDisabled) {
+          content = 'غير متاح';
+          className = 'disabled-slot';
+        } else if (allowBooking && !isDisabled) {
+          onClick = `onclick="book('${time}')"`;
+        }
+
+        if (currentUser?.role === 'admin' && allowToggle) {
+          onClick = `onclick="toggleSlot('${time}')"`;
+        }
+
+        html += `<td class="${className}" ${onClick}>${content}</td>`;
+      });
+      html += `</tr>`;
+    });
+
+    html += `</table>`;
+    document.getElementById(containerId).innerHTML = html;
+  }
+
+  function toggleSlot(time) {
+    const index = disabledSlots.indexOf(time);
+    if (index === -1) {
+      disabledSlots.push(time);
+    } else {
+      disabledSlots.splice(index, 1);
+    }
+    database.ref('disabledSlots').set(disabledSlots);
+  }
+
+  function renderMonthlyReport() {
+    const data = Object.keys(users).filter(u => users[u].approved).map(u => `${u}: ${users[u].sessions} جلسة`);
+    document.getElementById('monthly').innerHTML = data.join('<br>');
+  }
+
+  function renderUser() {
+    renderReportTable('schedule', bookings, true);
+    renderMyBookings();
+  }
+
+  function renderMyBookings() {
+    const myDiv = document.getElementById('myBookings');
+    const myBookings = Object.keys(bookings).filter(t => bookings[t] === currentUser.name);
+    myDiv.innerHTML = myBookings.length ?
+      myBookings.map(b => `<div>${b.replace('-', ' الساعة ')}</div>`).join('') : "لا توجد حجوزات.";
+  }
+
+  function book(time) {
+    if (disabledSlots.includes(time)) {
+      alert('هذا الموعد غير متاح للحجز.');
+      return;
+    }
+
+    const user = users[currentUser.name];
+    const myBookings = Object.keys(bookings).filter(t => bookings[t] === currentUser.name);
+
+    if (user.type === 'single' && myBookings.length >= 1) {
+      alert('مسموح لك بجلسة واحدة أسبوعياً فقط.');
+      return;
+    }
+    if (user.type === 'double' && myBookings.length >= 2) {
+      alert('مسموح لك بجلسيتين أسبوعياً فقط.');
+      return;
+    }
+
+    if (bookings[time]) {
+      alert('تم حجز هذا الوقت بالفعل.');
+      return;
+    }
+
+    // Update bookings
+    database.ref('bookings/' + time).set(currentUser.name)
+      .then(() => {
+        // Update user sessions count
+        return database.ref('users/' + currentUser.name + '/sessions').transaction((currentSessions) => {
+          return (currentSessions || 0) + 1;
+        });
+      });
+  }
+</script>
+</body>
+</html>
