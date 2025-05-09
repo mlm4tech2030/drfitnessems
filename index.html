@@ -40,7 +40,6 @@
       border: 1px solid #f00;
       padding: 8px;
       text-align: center;
-      cursor: pointer;
     }
     th {
       background-color: #222;
@@ -59,15 +58,27 @@
       background: #c00;
       color: #fff;
       margin: 2px;
-      padding: 5px;
+      padding: 5px 10px;
       font-size: 12px;
+      border: none;
+      border-radius: 3px;
+    }
+    #notice {
+      background-color: #222;
+      color: yellow;
+      padding: 10px;
+      margin-bottom: 20px;
+      font-size: 16px;
+      border: 1px solid yellow;
     }
     .cancel-btn {
       background: #ff0;
       color: #000;
       margin: 2px;
-      padding: 5px;
+      padding: 5px 10px;
       font-size: 12px;
+      border: none;
+      border-radius: 3px;
     }
     .clear-btn {
       background: #f90;
@@ -77,13 +88,57 @@
       width: 80%;
       max-width: 300px;
     }
-    #notice {
-      background-color: #222;
-      color: yellow;
+    .user-table {
+      width: 100%;
+      margin: 20px auto;
+      max-width: 900px;
+    }
+    .user-table th {
+      background-color: #333;
+      padding: 12px;
+    }
+    .user-table td {
       padding: 10px;
-      margin-bottom: 20px;
-      font-size: 16px;
-      border: 1px solid yellow;
+      vertical-align: middle;
+    }
+    .user-table tr:nth-child(even) {
+      background-color: #222;
+    }
+    .user-table tr:hover {
+      background-color: #333;
+    }
+    .action-btns {
+      display: flex;
+      justify-content: center;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+    .edit-btn {
+      background-color: #4CAF50;
+    }
+    .delete-btn {
+      background-color: #f44336;
+    }
+    .type-select {
+      padding: 5px;
+      border-radius: 3px;
+      border: 1px solid #555;
+      background-color: #222;
+      color: white;
+    }
+    .session-count {
+      font-weight: bold;
+      color: #4CAF50;
+    }
+    .pending-approval {
+      color: #FF9800;
+    }
+    .approved-user {
+      color: #4CAF50;
+    }
+    .registration-date {
+      font-size: 0.9em;
+      color: #aaa;
     }
   </style>
 </head>
@@ -229,7 +284,8 @@
           password: password,
           approved: false,
           type: null,
-          sessions: 0
+          sessions: 0,
+          registrationDate: new Date().toISOString()
         };
         database.ref('users/' + username).set(newUser)
           .then(() => {
@@ -244,16 +300,70 @@
     document.getElementById('login').classList.remove('hidden');
     document.getElementById('admin').classList.add('hidden');
     document.getElementById('user').classList.add('hidden');
+    document.getElementById('username').value = '';
+    document.getElementById('password').value = '';
   }
 
   function renderAdmin() {
+    // Pending Approvals Table
     const pending = Object.keys(users).filter(u => !users[u].approved);
     document.getElementById('pending').innerHTML = pending.length ?
-      pending.map(u => `<div>${u} <select id="type-${u}"><option value="single">سنجل</option><option value="double">دوبل</option></select><button onclick="approve('${u}')">اعتماد</button></div>`).join('') : "لا توجد طلبات.";
+      `<table class="user-table">
+        <tr>
+          <th>اسم المتدرب</th>
+          <th>تاريخ التسجيل</th>
+          <th>نوع الاشتراك</th>
+          <th>الإجراءات</th>
+        </tr>
+        ${pending.map(u => `
+          <tr>
+            <td class="pending-approval">${u}</td>
+            <td class="registration-date">${new Date(users[u].registrationDate).toLocaleDateString('ar-EG')}</td>
+            <td>
+              <select id="type-${u}" class="type-select">
+                <option value="single">سنجل</option>
+                <option value="double">دوبل</option>
+              </select>
+            </td>
+            <td class="action-btns">
+              <button onclick="approve('${u}')" class="action-btn">اعتماد</button>
+              <button onclick="deleteUser('${u}')" class="action-btn delete-btn">حذف</button>
+            </td>
+          </tr>
+        `).join('')}
+      </table>` : 
+      "<p>لا توجد طلبات جديدة.</p>";
 
+    // Approved Users Table
     const approved = Object.keys(users).filter(u => users[u].approved);
     document.getElementById('approved').innerHTML = approved.length ?
-      approved.map(u => `<div>${u} - اشتراك: ${users[u].type}<button class="action-btn" onclick="changeType('${u}')">تغيير الاشتراك</button><button class="action-btn" onclick="deleteUser('${u}')">حذف المتدرب</button></div>`).join('') : "لا يوجد.";
+      `<table class="user-table">
+        <tr>
+          <th>اسم المتدرب</th>
+          <th>نوع الاشتراك</th>
+          <th>عدد الجلسات</th>
+          <th>تاريخ التسجيل</th>
+          <th>الإجراءات</th>
+        </tr>
+        ${approved.map(u => `
+          <tr>
+            <td class="approved-user">${u}</td>
+            <td>
+              <select id="type-${u}" class="type-select" onchange="updateType('${u}')">
+                <option value="single" ${users[u].type === 'single' ? 'selected' : ''}>سنجل</option>
+                <option value="double" ${users[u].type === 'double' ? 'selected' : ''}>دوبل</option>
+              </select>
+            </td>
+            <td class="session-count">${users[u].sessions || 0}</td>
+            <td class="registration-date">${new Date(users[u].registrationDate).toLocaleDateString('ar-EG')}</td>
+            <td class="action-btns">
+              <button onclick="resetSessions('${u}')" class="action-btn">تصفير الجلسات</button>
+              <button onclick="deleteUser('${u}')" class="action-btn delete-btn">حذف</button>
+            </td>
+          </tr>
+        `).join('')}
+      </table>` : 
+      "<p>لا يوجد متدربين مسجلين.</p>";
 
     renderReportTable('reports', bookings, false, true);
     renderMonthlyReport();
@@ -263,19 +373,30 @@
     const type = document.getElementById(`type-${username}`).value;
     database.ref('users/' + username).update({
       approved: true,
-      type: type
+      type: type,
+      approvalDate: new Date().toISOString()
     });
+    alert(`تم اعتماد المتدرب ${username} بنجاح`);
   }
 
-  function changeType(username) {
-    const newType = users[username].type === 'single' ? 'double' : 'single';
+  function updateType(username) {
+    const type = document.getElementById(`type-${username}`).value;
     database.ref('users/' + username).update({
-      type: newType
+      type: type
     });
+    alert(`تم تحديث نوع الاشتراك لـ ${username} إلى ${type === 'single' ? 'سنجل' : 'دوبل'}`);
+  }
+
+  function resetSessions(username) {
+    if (confirm(`هل تريد تصفير عدد جلسات ${username}؟`)) {
+      database.ref('users/' + username).update({
+        sessions: 0
+      });
+    }
   }
 
   function deleteUser(username) {
-    if (confirm('هل أنت متأكد من حذف هذا المستخدم؟')) {
+    if (confirm(`هل أنت متأكد من حذف المتدرب ${username}؟ سيتم حذف جميع حجوزاته أيضاً.`)) {
       // Delete user
       database.ref('users/' + username).remove();
       
@@ -383,8 +504,28 @@
   }
 
   function renderMonthlyReport() {
-    const data = Object.keys(users).filter(u => users[u].approved).map(u => `${u}: ${users[u].sessions} جلسة`);
-    document.getElementById('monthly').innerHTML = data.join('<br>');
+    const approvedUsers = Object.keys(users).filter(u => users[u].approved);
+    const sortedUsers = approvedUsers.sort((a, b) => (users[b].sessions || 0) - (users[a].sessions || 0));
+    
+    const html = `
+      <table class="user-table">
+        <tr>
+          <th>اسم المتدرب</th>
+          <th>عدد الجلسات</th>
+          <th>نوع الاشتراك</th>
+          <th>تاريخ التسجيل</th>
+        </tr>
+        ${sortedUsers.map(u => `
+          <tr>
+            <td>${u}</td>
+            <td class="session-count">${users[u].sessions || 0}</td>
+            <td>${users[u].type === 'single' ? 'سنجل' : 'دوبل'}</td>
+            <td class="registration-date">${new Date(users[u].registrationDate).toLocaleDateString('ar-EG')}</td>
+          </tr>
+        `).join('')}
+      </table>
+    `;
+    document.getElementById('monthly').innerHTML = html;
   }
 
   function renderUser() {
@@ -396,7 +537,22 @@
     const myDiv = document.getElementById('myBookings');
     const myBookings = Object.keys(bookings).filter(t => bookings[t] === currentUser.name);
     myDiv.innerHTML = myBookings.length ?
-      myBookings.map(b => `<div>${b.replace('-', ' الساعة ')}</div>`).join('') : "لا توجد حجوزات.";
+      `<table class="user-table">
+        <tr>
+          <th>اليوم</th>
+          <th>الوقت</th>
+        </tr>
+        ${myBookings.map(b => {
+          const [day, time] = b.split('-');
+          return `
+            <tr>
+              <td>${day}</td>
+              <td>${time}</td>
+            </tr>
+          `;
+        }).join('')}
+      </table>` : 
+      "<p>لا توجد حجوزات.</p>";
   }
 
   function book(time) {
@@ -432,5 +588,7 @@
       });
   }
 </script>
+</body>
+</html>
 </body>
 </html>
