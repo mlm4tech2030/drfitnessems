@@ -140,6 +140,34 @@
       font-size: 0.9em;
       color: #aaa;
     }
+    /* New styles for admin panel */
+    .admin-nav {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .admin-nav-btn {
+      background-color: #333;
+      color: white;
+      padding: 10px 15px;
+      border-radius: 5px;
+      cursor: pointer;
+      min-width: 150px;
+    }
+    .admin-nav-btn:hover {
+      background-color: #444;
+    }
+    .admin-nav-btn.active {
+      background-color: #f00;
+    }
+    .admin-section {
+      display: none;
+    }
+    .admin-section.active {
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -153,17 +181,36 @@
 
 <div id="admin" class="hidden">
   <h1>لوحة الأدمن</h1>
-  <h2>طلبات التسجيل:</h2>
-  <div id="pending"></div>
-  <h2>قائمة المتدربين:</h2>
-  <div id="approved"></div>
-  <h2>جدول الجلسات:</h2>
-  <div id="reports"></div>
-  <h2>التقارير الشهرية:</h2>
-  <div id="monthly"></div>
-  <button class="clear-btn" onclick="clearMonthlyReports()">مسح كل التقارير الشهرية</button>
-  <button onclick="clearBookings()">مسح كل الحجوزات</button>
-  <button onclick="logout()">خروج</button>
+  
+  <div class="admin-nav">
+    <button class="admin-nav-btn active" onclick="showAdminSection('pending')">طلبات التسجيل</button>
+    <button class="admin-nav-btn" onclick="showAdminSection('approved')">قائمة المتدربين</button>
+    <button class="admin-nav-btn" onclick="showAdminSection('reports')">جدول الجلسات</button>
+    <button class="admin-nav-btn" onclick="showAdminSection('monthly')">التقارير الشهرية</button>
+    <button class="admin-nav-btn" onclick="clearMonthlyReports()">مسح التقارير</button>
+    <button class="admin-nav-btn" onclick="clearBookings()">مسح الحجوزات</button>
+    <button class="admin-nav-btn" onclick="logout()">خروج</button>
+  </div>
+  
+  <div id="pending-section" class="admin-section active">
+    <h2>طلبات التسجيل:</h2>
+    <div id="pending"></div>
+  </div>
+  
+  <div id="approved-section" class="admin-section">
+    <h2>قائمة المتدربين:</h2>
+    <div id="approved"></div>
+  </div>
+  
+  <div id="reports-section" class="admin-section">
+    <h2>جدول الجلسات:</h2>
+    <div id="reports"></div>
+  </div>
+  
+  <div id="monthly-section" class="admin-section">
+    <h2>التقارير الشهرية:</h2>
+    <div id="monthly"></div>
+  </div>
 </div>
 
 <div id="user" class="hidden">
@@ -304,6 +351,31 @@
     document.getElementById('password').value = '';
   }
 
+  function showAdminSection(sectionId) {
+    // Hide all sections
+    document.querySelectorAll('.admin-section').forEach(section => {
+      section.classList.remove('active');
+    });
+    
+    // Deactivate all buttons
+    document.querySelectorAll('.admin-nav-btn').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    
+    // Show selected section
+    document.getElementById(sectionId + '-section').classList.add('active');
+    
+    // Activate clicked button
+    event.target.classList.add('active');
+    
+    // If showing reports or monthly, make sure they're rendered
+    if (sectionId === 'reports') {
+      renderReportTable('reports', bookings, false, true);
+    } else if (sectionId === 'monthly') {
+      renderMonthlyReport();
+    }
+  }
+
   function renderAdmin() {
     // Pending Approvals Table
     const pending = Object.keys(users).filter(u => !users[u].approved);
@@ -365,8 +437,15 @@
       </table>` : 
       "<p>لا يوجد متدربين مسجلين.</p>";
 
-    renderReportTable('reports', bookings, false, true);
-    renderMonthlyReport();
+    // Only render reports table if it's the active section
+    if (document.getElementById('reports-section').classList.contains('active')) {
+      renderReportTable('reports', bookings, false, true);
+    }
+    
+    // Only render monthly report if it's the active section
+    if (document.getElementById('monthly-section').classList.contains('active')) {
+      renderMonthlyReport();
+    }
   }
 
   function approve(username) {
@@ -426,6 +505,7 @@
       database.ref().update(updates)
         .then(() => {
           alert('تم مسح جميع التقارير الشهرية بنجاح');
+          renderMonthlyReport();
         });
     }
   }
@@ -588,7 +668,5 @@
       });
   }
 </script>
-</body>
-</html>
 </body>
 </html>
